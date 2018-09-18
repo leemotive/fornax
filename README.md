@@ -101,13 +101,13 @@ the response is
   }
 }
 ```
-pagination width params: get `http://127.0.0.1:9000/api/user?skip=0&limit=10&status=1`
-get user: get `http://127.0.0.1:9000/api/user/440000199206017397`
-create user: post `http://127.0.0.1:9000/api/user`
-update user: put `http://127.0.0.1:9000/api/user/440000199206017397`
-delete user: delete `http://127.0.0.1:9000/api/user/440000199206017397`
+pagination width params: get `http://127.0.0.1:9000/api/user?skip=0&limit=10&status=1`  
+get user: get `http://127.0.0.1:9000/api/user/440000199206017397`  
+create user: post `http://127.0.0.1:9000/api/user`  
+update user: put `http://127.0.0.1:9000/api/user/440000199206017397`  
+delete user: delete `http://127.0.0.1:9000/api/user/440000199206017397`  
 
-visis user's order: get `http://127.0.0.1:9000/api/user/440000199206017397/order`
+visis user's order: get `http://127.0.0.1:9000/api/user/440000199206017397/order`  
 
 
 rewrite get/post/put/delete
