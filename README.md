@@ -29,14 +29,14 @@ Commands:
 ## Config
 all configuration in ./fornax.config.js
 
-| key                 | description                   | type           | default                                                                                                   | remark |
-|---------------------|-------------------------------|----------------|-----------------------------------------------------------------------------------------------------------|--------|
-| port                | mock server port              | number         | 9000                                                                                                      |        |
-| apiPrefix           | prefix of server api          | string         | /api                                                                                                      |        |
-| mockRoot            | root directory of mock files  | string         | mock                                                                                                      |        |
-| responseInterceptor | handle response before return | function(body) |                                                                                                           |        |
-| responseKey         | key in reponse body           | object         | {code: 'code',message: 'msg',data: 'data'}                                                                |        |
-| pageKey             | params for pagination         | object         | {skip:'skip',limit:'limit',order:'order',orderBy:'orderBy',pageSize:'pageSize',currentPage:'currentPage'} |        |
+| key                 | description                   | type           | default                                                                                                   |
+|---------------------|-------------------------------|----------------|-----------------------------------------------------------------------------------------------------------|
+| port                | mock server port              | number         | 9000                                                                                                      |
+| apiPrefix           | prefix of server api          | string         | /api                                                                                                      |
+| mockRoot            | root directory of mock files  | string         | mock                                                                                                      |
+| responseInterceptor | handle response before return | function(body) |                                                                                                           |
+| responseKey         | key in reponse body           | object         | {code: 'code',message: 'msg',data: 'data'}                                                                |
+| pageKey             | params for pagination         | object         | {skip:'skip',limit:'limit',order:'order',orderBy:'orderBy',pageSize:'pageSize',currentPage:'currentPage'} |
 
 ## Mock files
 
@@ -72,6 +72,11 @@ exports.mock = {
     },
   ],
 }
+exports.responseInterceptor = function(body, ctx) {
+  // override global responseInterceptor in config file
+  return body;
+}
+
 ```
 
 pagination: get `http://127.0.0.1:9000/api/user?skip=0&limit=10`
@@ -116,6 +121,10 @@ rewrite get/post/put/delete
 exports.handle = () => {
   return async ctx => {
     // koa request handler
+
+    ctx.responseInterceptor = function(body, ctx) {
+      // override global responseInterceptor in config file
+    }
   }
 }
 ```
@@ -126,6 +135,10 @@ exports.handle = (router) => {
   // koa-router
   router.get('/customizeRouter', ctx => {
     // koa request handler
+
+    ctx.responseInterceptor = function(body, ctx) {
+      // override global responseInterceptor in config file
+    }
   });
 }
 

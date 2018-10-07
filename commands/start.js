@@ -32,7 +32,7 @@ exports.start = function(config) {
     const last = Date.now();
     await next();
     const body = ctx.response.body;
-    ctx.response.body = responseInterceptor(body, ctx);
+    ctx.response.body = (ctx.responseInterceptor || responseInterceptor)(body, ctx);
     console.log(colors.magenta('fornax:') , ' ', ctx.method, ctx.request.url, ' ', statusColor(ctx.status), ' ', colors.yellow(Date.now() - last), ' ms');
   });
 
@@ -69,7 +69,6 @@ exports.start = function(config) {
       mockRest(mappings, restFile, methodFiles, remainfiles);
     }
 
-
   } while (currentDir = loopDirs.pop());
 
   function mockRest(mappings, restFile, methodFiles, remainfiles) {
@@ -81,21 +80,19 @@ exports.start = function(config) {
 
       methodFiles.page || router.get(mappings.page, async (ctx, next) => {
         const {
-          limit: limitKey,
+          pageSize: pageSizeKey,
           skip: skipKey,
+          currentPage: currentPageKey,
           order: orderKey,
           orderBy: orderByKey,
-          pageSize: pageSizeKey,
-          currentPage: currentPageKey,
         } = pageKey;
 
         let {
-          [limitKey]: limit,
+          [pageSizeKey]: pageSize,
           [skipKey]: skip,
+          [currentPageKey]: currentPage,
           [orderKey]: order,
           [orderByKey]: orderBy,
-          [pageSizeKey]: pageSize,
-          [currentPageKey]: currentPage,
           ...others
         } = ctx.query;
 
@@ -111,16 +108,15 @@ exports.start = function(config) {
             return comp ? 1 : -1;
           });
         }
+        pageSize = +(pageSize || 10);
         if (currentPage) {
-          limit = +(pageSize || 10);
-          skip = (currentPage - 1) * limit;
+          skip = (currentPage - 1) * pageSize;
         } else {
-          limit = +(limit || 10);
           skip = +(skip || 0);
         }
-        const pageListData = limit ? filterData.slice(skip, limit + skip) : filterData;
+        const pageListData = pageSize ? filterData.slice(skip, pageSize + skip) : filterData;
 
-        if (limit) {
+        if (pageSize) {
           ctx.response.body = {
             [listKey]: pageListData,
             total: filterData.length
@@ -128,6 +124,7 @@ exports.start = function(config) {
         } else {
           ctx.response.body = pageListData;
         }
+        ctx.responseInterceptor = rest.responseInterceptor;
 
       });
 

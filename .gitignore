@@ -1,2 +1,4 @@
 node_modules/
 *.log
+/mock
+.fornax.config.js
