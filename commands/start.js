@@ -99,7 +99,7 @@ exports.start = function(config) {
         const listKey = Object.keys(data)[0];
         let filterData = data[listKey].filter(item => {
           return Object.entries(others).every(([key, value]) => {
-            return item[key] == value;
+            return !item[key] || item[key] == value;
           });
         });
         if (orderBy) {
