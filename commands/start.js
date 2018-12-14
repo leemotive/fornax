@@ -1,6 +1,7 @@
 const Koa = require('koa');
 const router = require('koa-router')();
 const bodyParser = require('koa-bodyparser');
+const session = require('koa-session');
 const dir = require('node-dir');
 const Mock = require('mockjs');
 const path = require('path');
@@ -13,35 +14,84 @@ function statusColor(code) {
   } else if (code.startsWith('3')) {
     return colors.cyan(code);
   } else if (code.startsWith('4') || code.startsWith('5')) {
-    return colors.red(code)
+    return colors.red(code);
   } else {
     return code;
   }
 }
 
 exports.start = function(config) {
-
-  const { apiPrefix, responseInterceptor, pageKey, port } = config;
+  const {
+    apiPrefix,
+    responseInterceptor,
+    pageKey,
+    port,
+    sessionConfig,
+    setup,
+    userContext,
+  } = config;
 
   const app = new Koa();
   app.use(bodyParser());
 
   router.prefix(apiPrefix);
 
+  app.keys = ['ab3f16de-5d73-4f78-b457-431e74adc121'];
+  app.use(session(sessionConfig, app));
+
   app.use(async (ctx, next) => {
     const last = Date.now();
     await next();
     const body = ctx.response.body;
-    ctx.response.body = (ctx.responseInterceptor || responseInterceptor)(body, ctx);
-    console.log(colors.magenta('fornax:') , ' ', ctx.method, ctx.request.url, ' ', statusColor(ctx.status), ' ', colors.yellow(Date.now() - last), ' ms');
+    ctx.response.body = (ctx.responseInterceptor || responseInterceptor)(
+      body,
+      ctx,
+    );
+    console.log(
+      colors.magenta('fornax:'),
+      ' ',
+      ctx.method,
+      ctx.request.url,
+      ' ',
+      statusColor(ctx.status),
+      ' ',
+      colors.yellow(Date.now() - last),
+      ' ms',
+    );
   });
 
+  if ('function' === typeof setup) {
+    setup(app);
+  }
+
+  app.use((ctx, next) => {
+    const { username } = ctx.session;
+    if (!userContext || username) {
+      next();
+    } else {
+      const { path: pathname } = ctx;
+      let { list: pathlist, mode = 'black' } = userContext;
+
+      if (Array.isArray(userContext)) {
+        pathlist = userContext;
+      }
+      if (pathlist.some(reg => reg.test(pathname)) ^ (mode == 'black')) {
+        next();
+      } else {
+        ctx.status = 401;
+      }
+    }
+  });
 
   const loopDirs = [];
   let mockRoot = path.resolve(process.cwd(), config.mockRoot);
   let currentDir = mockRoot;
   do {
-    const { files, dirs } = dir.files(currentDir, 'all', _ => _, { recursive: false, sync: true, shortName: false });
+    const { files, dirs } = dir.files(currentDir, 'all', _ => _, {
+      recursive: false,
+      sync: true,
+      shortName: false,
+    });
     loopDirs.splice(0, 0, ...dirs);
     let restFile;
     let methodFiles = {};
@@ -49,7 +99,7 @@ exports.start = function(config) {
     files.forEach(f => {
       if (f.endsWith('_rest.js')) {
         restFile = f;
-      } else if (match = f.match(/_(get|post|put|delete|page)\.js/)) {
+      } else if ((match = f.match(/_(get|post|put|delete|page)\.js/))) {
         methodFiles[match[1]] = f;
       } else {
         remainfiles.push(f);
@@ -57,7 +107,9 @@ exports.start = function(config) {
     });
 
     if (files.length) {
-      const prefix = path.relative(mockRoot, path.dirname(files[0])).replace(/(\w+)\/_id/, '$1/:$1Id');
+      const prefix = path
+        .relative(mockRoot, path.dirname(files[0]))
+        .replace(/(\w+)\/_id/, '$1/:$1Id');
       const mappings = {
         page: `/${prefix}`,
         get: `/${prefix}/:id`,
@@ -68,8 +120,7 @@ exports.start = function(config) {
 
       mockRest(mappings, restFile, methodFiles, remainfiles);
     }
-
-  } while (currentDir = loopDirs.pop());
+  } while ((currentDir = loopDirs.pop()));
 
   function mockRest(mappings, restFile, methodFiles, remainfiles) {
     let db;
@@ -78,88 +129,94 @@ exports.start = function(config) {
       const data = rest.db || Mock.mock(rest.mock);
       db = data[Object.keys(data)[0]];
 
-      methodFiles.page || router.get(mappings.page, async (ctx, next) => {
-        const {
-          pageSize: pageSizeKey,
-          skip: skipKey,
-          currentPage: currentPageKey,
-          order: orderKey,
-          orderBy: orderByKey,
-        } = pageKey;
+      methodFiles.page ||
+        router.get(mappings.page, async (ctx, next) => {
+          const {
+            pageSize: pageSizeKey,
+            skip: skipKey,
+            currentPage: currentPageKey,
+            order: orderKey,
+            orderBy: orderByKey,
+          } = pageKey;
 
-        let {
-          [pageSizeKey]: pageSize,
-          [skipKey]: skip,
-          [currentPageKey]: currentPage,
-          [orderKey]: order,
-          [orderByKey]: orderBy,
-          ...others
-        } = ctx.query;
+          let {
+            [pageSizeKey]: pageSize,
+            [skipKey]: skip,
+            [currentPageKey]: currentPage,
+            [orderKey]: order,
+            [orderByKey]: orderBy,
+            ...others
+          } = ctx.query;
 
-        const listKey = Object.keys(data)[0];
-        let filterData = data[listKey].filter(item => {
-          return Object.entries(others).every(([key, value]) => {
-            return !value || item[key] == value;
+          const listKey = Object.keys(data)[0];
+          let filterData = data[listKey].filter(item => {
+            return Object.entries(others).every(([key, value]) => {
+              return !value || item[key] == value;
+            });
           });
-        });
-        if (orderBy) {
-          filterData.sort(({ [orderBy]: aKey }, { [orderBy]: bKey }) => {
-            const comp = aKey > bKey ^ order === 'desc';
-            return comp ? 1 : -1;
-          });
-        }
-        pageSize = +(pageSize || 10);
-        if (currentPage) {
-          skip = (currentPage - 1) * pageSize;
-        } else {
-          skip = +(skip || 0);
-        }
-        const pageListData = pageSize ? filterData.slice(skip, pageSize + skip) : filterData;
-
-        if (pageSize) {
-          ctx.response.body = {
-            [listKey]: pageListData,
-            total: filterData.length
+          if (orderBy) {
+            filterData.sort(({ [orderBy]: aKey }, { [orderBy]: bKey }) => {
+              const comp = (aKey > bKey) ^ (order === 'desc');
+              return comp ? 1 : -1;
+            });
           }
-        } else {
-          ctx.response.body = pageListData;
-        }
-        ctx.responseInterceptor = rest.responseInterceptor;
+          pageSize = +(pageSize || 10);
+          if (currentPage) {
+            skip = (currentPage - 1) * pageSize;
+          } else {
+            skip = +(skip || 0);
+          }
+          const pageListData = pageSize
+            ? filterData.slice(skip, pageSize + skip)
+            : filterData;
 
-      });
+          if (pageSize) {
+            ctx.response.body = {
+              [listKey]: pageListData,
+              total: filterData.length,
+            };
+          } else {
+            ctx.response.body = pageListData;
+          }
+          ctx.responseInterceptor = rest.responseInterceptor;
+        });
 
-      methodFiles.get || router.get(mappings.get, (ctx, next) => {
-        const { id } = ctx.params;
-        const record = db.find(item => item.id === id);
-        ctx.response.body = {
-          ...record
-        }
-      });
+      methodFiles.get ||
+        router.get(mappings.get, (ctx, next) => {
+          const { id } = ctx.params;
+          const record = db.find(item => item.id === id);
+          ctx.response.body = {
+            ...record,
+          };
+        });
 
-      methodFiles.post || router.post(mappings.post, (ctx) => {
-        const newRecord = ctx.request.body;
-        newRecord.id = Mock.mock('@id');
-        db.push(newRecord);
-        ctx.response.body = {
-          ...newRecord
-        }
-      });
+      methodFiles.post ||
+        router.post(mappings.post, ctx => {
+          const newRecord = ctx.request.body;
+          newRecord.id = Mock.mock('@id');
+          db.push(newRecord);
+          ctx.response.body = {
+            ...newRecord,
+          };
+        });
 
-      methodFiles.put || router.put(mappings.put, (ctx, next) => {
-        const newRecord = ctx.request.body;
-        const { id } = ctx.params;
-        const idx = db.findIndex(item => item.id === id);
-        db[idx] = { ...db[idx], ...newRecord };
-        ctx.response.body = {
-          ...db[idx]
-        }
-      });
-      methodFiles.delete || router.delete(mappings.delete, ctx => {
-        const { id } = ctx.params;
-        const idx = db.findIndex(item => item.id === id);
-        const deletedRecord = db.splice(idx, 1);
-        ctx.response.body = deletedRecord;
-      });
+      methodFiles.put ||
+        router.put(mappings.put, (ctx, next) => {
+          const newRecord = ctx.request.body;
+          const { id } = ctx.params;
+          const idx = db.findIndex(item => item.id === id);
+          db[idx] = { ...db[idx], ...newRecord };
+          ctx.response.body = {
+            ...db[idx],
+          };
+        });
+      methodFiles.delete ||
+        router.delete(mappings.delete, ctx => {
+          const { id } = ctx.params;
+          const idx = db.findIndex(item => item.id === id);
+          const deletedRecord = db.splice(idx, 1);
+          ctx.response.body = deletedRecord;
+        });
     }
     for (let [type, file] of Object.entries(methodFiles)) {
       const method = type == 'page' ? 'get' : type;
@@ -174,11 +231,12 @@ exports.start = function(config) {
         handle(router, db);
       }
     }
-
   }
   app.use(router.routes());
 
   app.listen(port, () => {
-    console.log(` mock server address: ${colors.cyan(`http://127.0.0.1:${port}`)}`);
+    console.log(
+      ` mock server address: ${colors.cyan(`http://127.0.0.1:${port}`)}`,
+    );
   });
-}
+};
